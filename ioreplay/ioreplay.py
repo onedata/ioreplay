@@ -7,9 +7,22 @@ __license__ = "This software is released under the Apache license cited in " \
               "LICENSE"
 
 import argparse
+from time import sleep, time
+from contextlib import suppress
 from pprint import pprint
 
 from parser import IOTraceParser
+
+
+def replay(syscalls):
+    start = time()
+    duration = 0
+    fds = {}
+    for syscall in syscalls:
+        # with suppress(Exception):
+        duration += syscall.perform(fds)
+    end = time()
+    print(duration / (end - start))
 
 
 def heh(mount_path: str, io_trace_path: str, create_env: bool):
@@ -23,7 +36,9 @@ def heh(mount_path: str, io_trace_path: str, create_env: bool):
     #     f.write('\n'.join(text))
 
     parser = IOTraceParser(mount_path=mount_path, create_env=create_env)
-    pprint(parser.parse('./qwe'))
+    syscalls = parser.parse(io_trace_path)
+    pprint(syscalls)
+    replay(syscalls)
 
 
 def main():
@@ -45,5 +60,5 @@ def main():
 
 
 if __name__ == '__main__':
-    heh('/mnt/oneclient', 'q2.csv', False)
+    heh('/home/cyfronet/Desktop/develop/test', './qwe2', False)
     # main()
