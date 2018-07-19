@@ -1,28 +1,46 @@
-"""This module contains ...nothing yet
-"""
+"""This module contains syscalls replayer and its command line interface"""
 
 __author__ = "Bartosz Walkowicz"
 __copyright__ = "Copyright (C) 2018 ACK CYFRONET AGH"
 __license__ = "This software is released under the Apache license cited in " \
               "LICENSE"
 
+import sys
 import argparse
-from time import sleep, time
-from contextlib import suppress
+from time import sleep
 from pprint import pprint
+from itertools import tee, zip_longest
 
 from parser import IOTraceParser
 
 
+def pairwise(iterable):
+    a, b = tee(iterable)
+    next(b, None)
+    return zip_longest(a, b)
+
+
 def replay(syscalls):
-    start = time()
-    duration = 0
+    io_duration = 0
+    cpu_duration = 0
     fds = {}
-    for syscall in syscalls:
-        with suppress(Exception):
-           duration += syscall.perform(fds)
-    end = time()
-    print((duration / 10**9) / (end - start))
+    for syscall, next_syscall in pairwise(syscalls):
+        try:
+           io_duration += syscall.perform(fds)
+        except Exception as ex:
+            print('Failed to execute {} due to {!r}'.format(syscall, ex),
+                  file=sys.stderr)
+
+        if next_syscall:
+            delay = next_syscall.timestamp - (syscall.timestamp
+                                              + syscall.duration)
+            if delay < 0:
+                delay = next_syscall.timestamp - syscall.timestamp
+
+            cpu_duration += delay * 1000  # timestamp and duration are in us
+            sleep(delay/10**6)
+
+    print('Overhead: ', io_duration / (io_duration + cpu_duration))
 
 
 def heh(mount_path: str, io_trace_path: str, create_env: bool):
@@ -61,5 +79,5 @@ def main():
 
 
 if __name__ == '__main__':
-    heh('/home/cyfronet/Desktop/develop/test', './qwe2', False)
+    heh('/home/cyfronet/Desktop/develop/test2', './qwe', False)
     # main()
