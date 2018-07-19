@@ -48,15 +48,16 @@ def main():
 
     parser.add_argument('mount_path',
                         help='Path to mounted Oneclient')
+    parser.add_argument('-i', '--io_trace',
+                        required=True,
+                        help='Path to csv file containing recorded io')
     parser.add_argument('-e', '--create_env',
                         action='store_true',
                         help='If specified missing files and directories '
                              'will be created before start of replay')
-    parser.add_argument('-i', '--io_log',
-                        required=True,
-                        help='Path to csv file containing recorded io')
     args = parser.parse_args()
-    heh(args.mount_path, args.io_log, args.create_env)
+
+    heh(args.mount_path, args.io_trace, args.create_env)
 
 
 if __name__ == '__main__':

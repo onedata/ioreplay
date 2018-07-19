@@ -34,30 +34,32 @@ class IOEntry(namedtuple('IOEntry', IO_ENTRY_FIELDS)):
 
     @classmethod
     def from_str(cls, entry: str) -> 'IOEntry':
-        args = entry.split(',')
-        args_num = len(args)
+        fields = entry.split(',')
+        fields_num = len(fields)
 
         # csv format do not require comma after last argument in line and
         # when there is no last argument (just ,\n) split returns one less
         # args than expected. In such case add empty string as default value
-        if args_num == IO_ENTRY_FIELDS_NUM - 1:
-            args.append('')
-        elif args_num == IO_ENTRY_FIELDS_NUM:
+        if fields_num == IO_ENTRY_FIELDS_NUM - 1:
+            fields.append('')
+        elif fields_num == IO_ENTRY_FIELDS_NUM:
             pass
         else:
             raise ValueError('Required {} arguments in entry, '
                              'instead given {}'.format(IO_ENTRY_FIELDS_NUM,
-                                                       args_num))
+                                                       fields_num))
 
-        timestamp, op, duration, *rest = args
-        return cls(int(timestamp), op, int(duration), *rest)
+        timestamp, op, duration, uuid, handle_id, retries, *args = fields
+
+        return cls(int(timestamp), op, int(duration), uuid,
+                   int(handle_id), int(retries), *args)
 
 
 class IOTraceParser:
 
     def __init__(self, *, mount_path: str, create_env: bool = False):
-        self.create_env = create_env
         self.mount_path = mount_path
+        self.create_env = create_env
 
         self.mount_dir_uuid = ''
 
@@ -110,9 +112,7 @@ class IOTraceParser:
         path_lookup = self._take_pending_lookup(parent_dir, entry.timestamp,
                                                 entry.duration)
 
-        pending_lookups_for_path = self.pending_lookups.get(path, [])
-        pending_lookups_for_path.insert(0, path_lookup)
-        self.pending_lookups[path] = pending_lookups_for_path
+        self.pending_lookups.setdefault(path, []).insert(0, path_lookup)
 
     def getattr(self, entry: IOEntry):
         """[getattr] None"""
@@ -125,15 +125,16 @@ class IOTraceParser:
         """[setattr] arg-0: set_mask, arg-1: mode, arg-2: size, arg-3: atime,
                      arg-4: mtime
         """
-        mask = int(entry.arg0)
+        set_mask = int(entry.arg0)
         mode = int(entry.arg1)
         size = int(entry.arg2)
-        atime = float(entry.arg3)
-        mtime = float(entry.arg4)
+        atime = int(entry.arg3)
+        mtime = int(entry.arg4)
+
         path = self.env[entry.uuid]
         timestamp, duration = self._take_pending_lookup(path, entry.timestamp,
                                                         entry.duration)
-        self.syscalls.append(SetAttr(timestamp, duration, path, mask,
+        self.syscalls.append(SetAttr(timestamp, duration, path, set_mask,
                                      mode, size, atime, mtime))
 
     def readdir(self, entry: IOEntry):
@@ -142,21 +143,23 @@ class IOTraceParser:
 
     def open(self, entry: IOEntry):
         """[open] arg-0: flags"""
+        flags = int(entry.arg0)
         path = self.env[entry.uuid]
         timestamp, duration = self._take_pending_lookup(path, entry.timestamp,
                                                         entry.duration)
-        self.syscalls.append(Open(timestamp, duration, path, int(entry.arg0),
-                                  int(entry.handle_id)))
+        self.syscalls.append(Open(timestamp, duration, path, flags,
+                                  entry.handle_id))
 
     def release(self, entry: IOEntry):
         """[release] None"""
         self.syscalls.append(Release(entry.timestamp, entry.duration,
-                                     int(entry.handle_id)))
+                                     entry.handle_id))
 
     def fsync(self, entry: IOEntry):
         """[fsync] arg-0: data_only"""
+        data_only = bool(int(entry.arg0))
         self.syscalls.append(Fsync(entry.timestamp, entry.duration,
-                                   int(entry.handle_id), int(entry.arg0)))
+                                   entry.handle_id, data_only))
 
     def flush(self, entry: IOEntry):
         """[flush] None"""
@@ -164,15 +167,17 @@ class IOTraceParser:
 
     def create(self, entry: IOEntry):
         """[create] arg-0: name, arg-1: new_uuid, arg-2: mode, arg-3: flags"""
+        mode = int(entry.arg2)
+        flags = int(entry.arg3)
+
         parent_dir = self.env[entry.uuid]
         path = os.path.join(parent_dir, entry.arg0)
         self.env[entry.arg1] = path
         timestamp, duration = self._take_pending_lookup(parent_dir,
                                                         entry.timestamp,
                                                         entry.duration)
-
-        self.syscalls.append(Create(timestamp, duration, path, int(entry.arg3),
-                                    int(entry.arg2), int(entry.handle_id)))
+        self.syscalls.append(Create(timestamp, duration, path, flags, mode,
+                                    entry.handle_id))
 
     def mkdir(self, entry: IOEntry):
         """[mkdir] arg-0: name, arg-1: new_dir_uuid, arg-2: mode"""
@@ -201,15 +206,11 @@ class IOTraceParser:
         dst_parent_dir = self.env[entry.arg1]
         dst_path = os.path.join(dst_parent_dir, entry.arg2)
 
-        new_uuid = entry.arg3
-        self.env[new_uuid] = dst_path
+        self.env[entry.arg3] = dst_path
 
-        # prior to nod creation lookup is made to check if such nod
-        # already exists; remove this lookup
         timestamp, duration = self._take_pending_lookup(src_path,
                                                         entry.timestamp,
                                                         entry.duration)
-
         self.syscalls.append(Rename(timestamp, duration, src_path, dst_path))
 
     def getxattr(self, entry: IOEntry):
@@ -221,6 +222,9 @@ class IOTraceParser:
 
     def setxattr(self, entry: IOEntry):
         """[setxattr] arg-0: name, arg-1: val, arg-2: create, arg-3: replace"""
+        attr = entry.arg0
+        val = bytes(entry.arg1, 'utf8')
+
         if int(entry.arg2):
             flags = os.XATTR_CREATE
         elif int(entry.arg3):
@@ -232,7 +236,7 @@ class IOTraceParser:
         timestamp, duration = self._take_pending_lookup(path, entry.timestamp,
                                                         entry.duration)
         self.syscalls.append(SetXAttr(timestamp, duration, path,
-                                      entry.arg0, entry.arg1, flags))
+                                      attr, val, flags))
 
     def removexattr(self, entry: IOEntry):
         """[removexattr] arg-0: name"""
@@ -274,11 +278,13 @@ class IOTraceParser:
     def _rw(self, entry: IOEntry, syscall):
         offset = int(entry.arg0)
         size = int(entry.arg1)
-        handle_id = int(entry.handle_id)
+        handle_id = entry.handle_id
         self.syscalls.append(syscall(entry.timestamp, entry.duration,
                                      handle_id, size, offset))
 
     def _mk(self, entry: IOEntry, syscall):
+        mode = int(entry.arg2)
+
         parent_dir = self.env[entry.uuid]
         path = os.path.join(parent_dir, entry.arg0)
         self.env[entry.arg1] = path
@@ -286,6 +292,4 @@ class IOTraceParser:
         timestamp, duration = self._take_pending_lookup(parent_dir,
                                                         entry.timestamp,
                                                         entry.duration)
-
-        self.syscalls.append(syscall(timestamp, duration, path,
-                                     int(entry.arg2)))
+        self.syscalls.append(syscall(timestamp, duration, path, mode))
