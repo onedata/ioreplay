@@ -12,14 +12,9 @@ import sys
 from pprint import pprint
 from collections import namedtuple
 
-try:
-    from .operations import (GetAttr, Open, Release, Fsync, Create, MkDir,
-                             MkNod, Unlink, GetXAttr, SetXAttr, RemoveXAttr,
-                             ListXAttr, Read, Write, Rename, SetAttr)
-except (ImportError, SystemError):
-    from operations import (GetAttr, Open, Release, Fsync, Create, MkDir,
-                            MkNod, Unlink, GetXAttr, SetXAttr, RemoveXAttr,
-                            ListXAttr, Read, Write, Rename, SetAttr)
+from operations import (GetAttr, Open, Release, Fsync, Create, MkDir,
+                        MkNod, Unlink, GetXAttr, SetXAttr, RemoveXAttr,
+                        ListXAttr, Read, Write, Rename, SetAttr)
 
 
 IO_ENTRY_FIELDS = ['timestamp', 'op', 'duration', 'uuid',

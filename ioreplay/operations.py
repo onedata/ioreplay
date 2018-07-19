@@ -1,5 +1,4 @@
-"""This module contains system calls wrappers
-"""
+"""This module contains system calls wrappers"""
 
 __author__ = "Bartosz Walkowicz"
 __copyright__ = "Copyright (C) 2018 ACK CYFRONET AGH"
@@ -7,8 +6,8 @@ __license__ = "This software is released under the Apache license cited in " \
               "LICENSE"
 
 import os
-from time import time
-from typing import Callable, Any, Tuple, Dict
+from typing import Dict
+from time import time_ns
 from collections import namedtuple
 
 
@@ -22,27 +21,24 @@ FUSE_SET_ATTR_MTIME_NOW = (1 << 8)
 BASIC_FIELDS = ['timestamp', 'duration']
 
 
-def timeit(func: Callable[[], Any]) -> Tuple[Any, float]:
-    start = time()
-    result = func()
-    return result, time() - start
-
-
 class GetAttr(namedtuple('GetAttr', BASIC_FIELDS + ['path'])):
     __slots__ = ()
 
     def perform(self, _: Dict[int, int]) -> float:
-        _, duration = timeit(lambda: os.stat(self.path))
-        return duration
+        s = time_ns()
+        os.stat(self.path)
+        return time_ns() - s
 
 
 class Open(namedtuple('Open', BASIC_FIELDS + ['path', 'flags', 'handle_id'])):
     __slots__ = ()
 
     def perform(self, fds: Dict[int, int]) -> float:
-        fd, duration = timeit(lambda: os.open(self.path, self.flags))
+        s = time_ns()
+        fd = os.open(self.path, self.flags)
+        e = time_ns()
         fds[self.handle_id] = fd
-        return duration
+        return e - s
 
 
 class Release(namedtuple('Release', BASIC_FIELDS + ['handle_id'])):
@@ -50,8 +46,9 @@ class Release(namedtuple('Release', BASIC_FIELDS + ['handle_id'])):
 
     def perform(self, fds: Dict[int, int]) -> float:
         fd = fds.pop(self.handle_id)
-        _, duration = timeit(lambda: os.close(fd))
-        return duration
+        s = time_ns()
+        os.close(fd)
+        return time_ns() - s
 
 
 class Fsync(namedtuple('Fsync', BASIC_FIELDS + ['handle_id', 'data_only'])):
@@ -60,8 +57,9 @@ class Fsync(namedtuple('Fsync', BASIC_FIELDS + ['handle_id', 'data_only'])):
     def perform(self, fds: Dict[int, int]) -> float:
         fd = fds[self.handle_id]
         sync = os.fdatasync if self.data_only else os.fsync
-        _, duration = timeit(lambda: sync(fd))
-        return duration
+        s = time_ns()
+        sync(fd)
+        return time_ns() - s
 
 
 class Create(namedtuple('Create', BASIC_FIELDS + ['path', 'flags', 'mode',
@@ -69,41 +67,47 @@ class Create(namedtuple('Create', BASIC_FIELDS + ['path', 'flags', 'mode',
     __slots__ = ()
 
     def perform(self, fds: Dict[int, int]) -> float:
-        fd, duration = timeit(lambda: os.open(self.path, self.flags, self.mode))
+        s = time_ns()
+        fd = os.open(self.path, self.flags, self.mode)
+        e = time_ns()
         fds[self.handle_id] = fd
-        return duration
+        return e - s
 
 
 class MkDir(namedtuple('MkDir', BASIC_FIELDS + ['path', 'mode'])):
     __slots__ = ()
 
     def perform(self, _: Dict[int, int]) -> float:
-        _, duration = timeit(lambda: os.mkdir(self.path, self.mode))
-        return duration
+        s = time_ns()
+        os.mkdir(self.path, self.mode)
+        return time_ns() - s
 
 
 class MkNod(namedtuple('MkNod', BASIC_FIELDS + ['path', 'mode'])):
     __slots__ = ()
 
     def perform(self, _: Dict[int, int]) -> float:
-        _, duration = timeit(lambda: os.mknod(self.path, self.mode))
-        return duration
+        s = time_ns()
+        os.mknod(self.path, self.mode)
+        return time_ns() - s
 
 
 class Unlink(namedtuple('Unlink', BASIC_FIELDS + ['path'])):
     __slots__ = ()
 
     def perform(self, _: Dict[int, int]) -> float:
-        _, duration = timeit(lambda: os.unlink(self.path))
-        return duration
+        s = time_ns()
+        os.unlink(self.path)
+        return time_ns() - s
 
 
 class GetXAttr(namedtuple('GetXAttr', BASIC_FIELDS + ['path', 'attr'])):
     __slots__ = ()
 
     def perform(self, _: Dict[int, int]) -> float:
-        _, duration = timeit(lambda: os.getxattr(self.path, self.attr))
-        return duration
+        s = time_ns()
+        os.getxattr(self.path, self.attr)
+        return time_ns() - s
 
 
 class SetXAttr(namedtuple('SetXAttr', BASIC_FIELDS + ['path', 'attr', 'val',
@@ -111,25 +115,27 @@ class SetXAttr(namedtuple('SetXAttr', BASIC_FIELDS + ['path', 'attr', 'val',
     __slots__ = ()
 
     def perform(self, _: Dict[int, int]) -> float:
-        _, duration = timeit(lambda: os.setxattr(self.path, self.attr,
-                                                 self.val, self.flags))
-        return duration
+        s = time_ns()
+        os.setxattr(self.path, self.attr, self.val, self.flags)
+        return time_ns() - s
 
 
 class RemoveXAttr(namedtuple('RemoveXAttr', BASIC_FIELDS + ['path', 'attr'])):
     __slots__ = ()
 
     def perform(self, _: Dict[int, int]) -> float:
-        _, duration = timeit(lambda: os.removexattr(self.path, self.attr))
-        return duration
+        s = time_ns()
+        os.removexattr(self.path, self.attr)
+        return time_ns() - s
 
 
 class ListXAttr(namedtuple('ListXAttr', BASIC_FIELDS + ['path'])):
     __slots__ = ()
 
     def perform(self, _: Dict[int, int]) -> float:
-        _, duration = timeit(lambda: os.listxattr(self.path))
-        return duration
+        s = time_ns()
+        os.listxattr(self.path)
+        return time_ns() - s
 
 
 class Read(namedtuple('Read', BASIC_FIELDS + ['handle_id', 'size', 'offset'])):
@@ -138,8 +144,9 @@ class Read(namedtuple('Read', BASIC_FIELDS + ['handle_id', 'size', 'offset'])):
     def perform(self, fds: Dict[int, int]) -> float:
         fd = fds[self.handle_id]
         os.lseek(fd, self.offset, os.SEEK_SET)
-        _, duration = timeit(lambda: os.read(fd, self.size))
-        return duration
+        s = time_ns()
+        os.read(fd, self.size)
+        return time_ns() - s
 
 
 class Write(namedtuple('Write', BASIC_FIELDS + ['handle_id', 'size',
@@ -150,16 +157,18 @@ class Write(namedtuple('Write', BASIC_FIELDS + ['handle_id', 'size',
         fd = fds[self.handle_id]
         random_junk = os.urandom(self.size)
         os.lseek(fd, self.offset, os.SEEK_SET)
-        _, duration = timeit(lambda: os.write(fd, random_junk))
-        return duration
+        s = time_ns()
+        os.write(fd, random_junk)
+        return time_ns() - s
 
 
 class Rename(namedtuple('Rename', BASIC_FIELDS + ['src_path', 'dst_path'])):
     __slots__ = ()
 
     def perform(self, _: Dict[int, int]) -> float:
-        _, duration = timeit(lambda: os.rename(self.src_path, self.dst_path))
-        return duration
+        s = time_ns()
+        os.rename(self.src_path, self.dst_path)
+        return time_ns() - s
 
 
 class SetAttr(namedtuple('Rename', BASIC_FIELDS + ['path', 'mask', 'mode',
@@ -178,5 +187,7 @@ class SetAttr(namedtuple('Rename', BASIC_FIELDS + ['path', 'mask', 'mode',
         if self.mask & (FUSE_SET_ATTR_ATIME_NOW | FUSE_SET_ATTR_MTIME_NOW):
             functions.append(lambda: os.utime(self.path))
 
-        _, duration = timeit(lambda: [fun() for fun in functions])
-        return duration
+        s = time_ns()
+        for fun in functions:
+            fun()
+        return time_ns() - s

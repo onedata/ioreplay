@@ -19,10 +19,10 @@ def replay(syscalls):
     duration = 0
     fds = {}
     for syscall in syscalls:
-        # with suppress(Exception):
-        duration += syscall.perform(fds)
+        with suppress(Exception):
+           duration += syscall.perform(fds)
     end = time()
-    print(duration / (end - start))
+    print((duration / 10**9) / (end - start))
 
 
 def heh(mount_path: str, io_trace_path: str, create_env: bool):
