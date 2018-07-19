@@ -1,3 +1,4 @@
+#! /usr/bin/env python3.7
 """This module contains syscalls replayer and its command line interface"""
 
 __author__ = "Bartosz Walkowicz"
@@ -9,7 +10,7 @@ import sys
 import argparse
 from time import sleep
 from pprint import pprint
-from itertools import tee, zip_longest
+from itertools import tee, chain, zip_longest
 
 from parser import IOTraceParser
 
@@ -30,6 +31,7 @@ def replay(syscalls):
         except Exception as ex:
             print('Failed to execute {} due to {!r}'.format(syscall, ex),
                   file=sys.stderr)
+            continue
 
         if next_syscall:
             delay = next_syscall.timestamp - (syscall.timestamp
@@ -43,20 +45,19 @@ def replay(syscalls):
     print('Overhead: ', io_duration / (io_duration + cpu_duration))
 
 
-def heh(mount_path: str, io_trace_path: str, create_env: bool):
-    # with open(io_trace_path) as f:
-    #     text = f.read().split('\n')[1:-1]
-    #
-    # # Drop first line as it is just a header
-    # text.sort(key=lambda line: int(line.split(',', 1)[0]))
-    #
-    # with open('./qwe2', 'w') as f:
-    #     f.write('\n'.join(text))
+def heh(mount_path: str, io_trace_path: str, create_env: bool, sort_trace: bool):
+    if sort_trace:
+        with open(io_trace_path, 'r+') as f:
+            text = f.read().strip().split('\n')
+            header, *logs = text
+            logs.sort(key=lambda line: int(line.split(',', 1)[0]))
+            f.seek(0)
+            f.write('\n'.join(chain([header], logs)))
 
     parser = IOTraceParser(mount_path=mount_path, create_env=create_env)
     syscalls = parser.parse(io_trace_path)
     pprint(syscalls)
-    replay(syscalls)
+    # replay(syscalls)
 
 
 def main():
@@ -73,11 +74,15 @@ def main():
                         action='store_true',
                         help='If specified missing files and directories '
                              'will be created before start of replay')
+    parser.add_argument('-s', '--sort_trace',
+                        action='store_true',
+                        help='If specified trace logs will be sorted by '
+                             'timestamp')
     args = parser.parse_args()
 
-    heh(args.mount_path, args.io_trace, args.create_env)
+    heh(args.mount_path, args.io_trace, args.create_env, args.sort_trace)
 
 
 if __name__ == '__main__':
-    heh('/home/cyfronet/Desktop/develop/test2', './qwe', False)
+    heh('/home/cyfronet/Desktop/develop/test3', './qwe3.csv', True, False)
     # main()

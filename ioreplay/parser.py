@@ -9,7 +9,6 @@ __license__ = "This software is released under the Apache license cited in " \
 
 import os
 import sys
-from pprint import pprint
 from collections import namedtuple
 
 from operations import (GetAttr, Open, Release, Fsync, Create, MkDir,
@@ -86,21 +85,26 @@ class IOTraceParser:
                 else:
                     op(entry)
 
-        pprint(self.env)
-        print()
-        pprint(self.pending_lookups)
-        print()
-        pprint(self.syscalls)
-
         return sorted(self.syscalls, key=lambda syscall: syscall.timestamp)
 
     def lookup(self, entry: IOEntry):
-        """[lookup] arg-0: child_name, arg-1: child_uuid"""
+        """[lookup] arg-0: child_name, arg-1: child_uuid, arg-2: child_type,
+                    arg-3: child_size
+        """
         parent_dir = self.env[entry.uuid]
         uuid = entry.arg1
         path = os.path.join(parent_dir, entry.arg0)
-        if self.create_env and uuid not in self.env:
-            ...  # TODO create entity
+        if self.create_env and uuid not in self.env and not os.path.exists(path):
+            file_type = entry.arg2
+            try:
+                if file_type == 'd':
+                    os.mkdir(path)
+                if file_type == 'f':
+                    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC)
+                    os.truncate(fd, int(entry.arg3))
+            except Exception as ex:
+                print('Failed to create {} due to {!r}'.format(path, ex),
+                      file=sys.stderr)
 
         self.env[uuid] = path
 
