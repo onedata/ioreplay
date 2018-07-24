@@ -1,5 +1,5 @@
-"""This module contains parser that takes as input path to file containing
-io trace and returns estimated system calls.
+"""This module contains parser parsing io trace and returning sequence of
+system calls that lead to mentioned trace.
 """
 
 __author__ = "Bartosz Walkowicz"
@@ -15,6 +15,11 @@ from operations import (GetAttr, Open, Release, Fsync, Create, MkDir,
                         MkNod, Unlink, GetXAttr, SetXAttr, RemoveXAttr,
                         ListXAttr, Read, Write, Rename, SetAttr)
 
+
+# Max delay, in us, between subsequent fuse calls of the same system call
+# (every syscall translates up to several fuse calls) caused by context switch
+# between kernel and userland.
+CTX_SWITCH_DELAY = 250
 
 IO_ENTRY_FIELDS = ['timestamp', 'op', 'duration', 'uuid',
                    'handle_id', 'retries', 'arg0', 'arg1',
@@ -39,9 +44,9 @@ class IOEntry(namedtuple('IOEntry', IO_ENTRY_FIELDS)):
         elif fields_num == IO_ENTRY_FIELDS_NUM:
             pass
         else:
-            raise ValueError('Required {} arguments in entry, '
-                             'instead given {}'.format(IO_ENTRY_FIELDS_NUM,
-                                                       fields_num))
+            raise ValueError(f'Expected {IO_ENTRY_FIELDS_NUM} number of '
+                             f'arguments in entry instead of '
+                             f'specified {fields_num}')
 
         timestamp, op, duration, uuid, handle_id, retries, *args = fields
 
@@ -58,34 +63,57 @@ class IOTraceParser:
         self.mount_dir_uuid = ''
 
         self.env = {}
+        self.open_fds = set()
         self.syscalls = []
         self.pending_lookups = {}
 
     def parse(self, io_trace_path: str):
         with open(io_trace_path) as f:
-            # ignore first line as it contains headers only
+            # ignore first line (headers)
             f.readline()
 
-            # second line contains mount_dir_uuid (this is getattr on mount_dir)
-            mount_dir_getattr_entry = IOEntry.from_str(f.readline())
-            mount_dir_uuid = mount_dir_getattr_entry.uuid
-            self.mount_dir_uuid = mount_dir_uuid
-            self.env[mount_dir_uuid] = self.mount_path
+            # second should contain mount entry
+            try:
+                mount_entry = IOEntry.from_str(f.readline())
+                assert mount_entry.op == 'mount', mount_entry.op
+            except ValueError as ex:
+                print(f'Failed to parse line 2 due to: {ex}', file=sys.stderr)
+                exit(1)
+            except AssertionError as ex:
+                print(f'Failed to parse trace file due to: '
+                      f'Expected "mount" entry as first entry instead '
+                      f'found "{ex}"', file=sys.stderr)
+                exit(1)
+            else:
+                self.mount_dir_uuid = mount_entry.uuid
+                self.env[mount_entry.uuid] = self.mount_path
 
-            for i, line in enumerate(f):
-                try:
-                    entry = IOEntry.from_str(line)
-                    op = getattr(self, entry.op)
-                except ValueError as ex:
-                    print('Failed to parse line {} due to {}'.format(i, ex),
-                          file=sys.stderr)
-                except AttributeError:
-                    print('Failed to parse line {} due to unrecognized '
-                          'operation'.format(i), file=sys.stderr)
-                else:
-                    op(entry)
+            lines = f.readlines()
 
-        return sorted(self.syscalls, key=lambda syscall: syscall.timestamp)
+        lines.sort(key=lambda x: int(x.split(',', maxsplit=1)[0]))
+
+        start_time = int(lines[0].split(',', maxsplit=1)[0])
+        end_time = 0
+        io_duration = 0
+        for i, line in enumerate(lines, start=3):
+            try:
+                entry = IOEntry.from_str(line)
+                op = getattr(self, entry.op)
+            except AttributeError:
+                print(f'Failed to parse line {i} due to unrecognized operation',
+                      file=sys.stderr)
+            except Exception as ex:
+                print('Failed to parse line {} due to: {}'.format(i, ex),
+                      file=sys.stderr)
+            else:
+                io_duration += entry.duration
+                op_finished_at = entry.timestamp + entry.duration
+                if op_finished_at > end_time:
+                    end_time = op_finished_at
+                op(entry)
+
+        syscalls = sorted(self.syscalls, key=lambda syscall: syscall.timestamp)
+        return syscalls, io_duration, end_time - start_time
 
     def lookup(self, entry: IOEntry):
         """[lookup] arg-0: child_name, arg-1: child_uuid, arg-2: child_type,
@@ -94,7 +122,11 @@ class IOTraceParser:
         parent_dir = self.env[entry.uuid]
         uuid = entry.arg1
         path = os.path.join(parent_dir, entry.arg0)
-        if self.create_env and uuid not in self.env and not os.path.exists(path):
+
+        file_exists = os.path.exists(path)
+        is_file_a_space = self.mount_dir_uuid == entry.uuid
+        should_create_file = self.create_env and uuid not in self.env
+        if should_create_file and not file_exists and not is_file_a_space:
             file_type = entry.arg2
             try:
                 if file_type == 'd':
@@ -105,6 +137,7 @@ class IOTraceParser:
             except Exception as ex:
                 print('Failed to create {} due to {!r}'.format(path, ex),
                       file=sys.stderr)
+                exit(1)
 
         self.env[uuid] = path
 
@@ -146,22 +179,14 @@ class IOTraceParser:
         path = self.env[entry.uuid]
         timestamp, duration = self._take_pending_lookup(path, entry.timestamp,
                                                         entry.duration)
+        self.open_fds.add(entry.handle_id)
         self.syscalls.append(Open(timestamp, duration, path, flags,
                                   entry.handle_id))
 
-    def release(self, entry: IOEntry):
-        """[release] None"""
-        self.syscalls.append(Release(entry.timestamp, entry.duration,
-                                     entry.handle_id))
-
-    def fsync(self, entry: IOEntry):
-        """[fsync] arg-0: data_only"""
-        data_only = bool(int(entry.arg0))
-        self.syscalls.append(Fsync(entry.timestamp, entry.duration,
-                                   entry.handle_id, data_only))
-
     def flush(self, entry: IOEntry):
         """[flush] None"""
+        # This is called on 'close', alongside with 'release', so ignore it as
+        # 'close' is/was scheduled on 'release' already.
         pass
 
     def create(self, entry: IOEntry):
@@ -175,6 +200,7 @@ class IOTraceParser:
         timestamp, duration = self._take_pending_lookup(parent_dir,
                                                         entry.timestamp,
                                                         entry.duration)
+        self.open_fds.add(entry.handle_id)
         self.syscalls.append(Create(timestamp, duration, path, flags, mode,
                                     entry.handle_id))
 
@@ -261,11 +287,27 @@ class IOTraceParser:
         """[write] arg-0: offset, arg-1: size"""
         self._rw(entry, Write)
 
+    def fsync(self, entry: IOEntry):
+        """[fsync] arg-0: data_only"""
+        # 'fsync' is called, alongside with 'release', on 'close' syscall
+        # (but generally a bit later). So 'fsync' after 'release' is ignored
+        # as part of 'close' syscall.
+        if entry.handle_id in self.open_fds:
+            data_only = bool(int(entry.arg0))
+            self.syscalls.append(Fsync(entry.timestamp, entry.duration,
+                                       entry.handle_id, data_only))
+
+    def release(self, entry: IOEntry):
+        """[release] None"""
+        self.open_fds.remove(entry.handle_id)
+        self.syscalls.append(Release(entry.timestamp, entry.duration,
+                                     entry.handle_id))
+
     def _take_pending_lookup(self, path: str, timestamp: int, duration: int):
         pending_lookups_for_path = self.pending_lookups.get(path, [])
         for pl in pending_lookups_for_path:
             pl_timestamp, pl_duration = pl
-            if pl_timestamp + pl_duration <= timestamp:
+            if 0 <= timestamp - (pl_timestamp + pl_duration) <= CTX_SWITCH_DELAY:
                 pending_lookups_for_path.remove(pl)
                 new_lookup = (pl_timestamp, timestamp + duration - pl_timestamp)
                 break
@@ -277,9 +319,8 @@ class IOTraceParser:
     def _rw(self, entry: IOEntry, syscall):
         offset = int(entry.arg0)
         size = int(entry.arg1)
-        handle_id = entry.handle_id
         self.syscalls.append(syscall(entry.timestamp, entry.duration,
-                                     handle_id, size, offset))
+                                     entry.handle_id, size, offset))
 
     def _mk(self, entry: IOEntry, syscall):
         mode = int(entry.arg2)

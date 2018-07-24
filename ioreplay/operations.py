@@ -24,7 +24,7 @@ BASIC_FIELDS = ['timestamp', 'duration']
 class GetAttr(namedtuple('GetAttr', BASIC_FIELDS + ['path'])):
     __slots__ = ()
 
-    def perform(self, _: Dict[int, int]) -> float:
+    def perform(self, _: Dict[int, int]) -> int:
         s = time_ns()
         os.stat(self.path)
         return time_ns() - s
@@ -33,7 +33,7 @@ class GetAttr(namedtuple('GetAttr', BASIC_FIELDS + ['path'])):
 class Open(namedtuple('Open', BASIC_FIELDS + ['path', 'flags', 'handle_id'])):
     __slots__ = ()
 
-    def perform(self, fds: Dict[int, int]) -> float:
+    def perform(self, fds: Dict[int, int]) -> int:
         s = time_ns()
         fd = os.open(self.path, self.flags)
         e = time_ns()
@@ -44,7 +44,7 @@ class Open(namedtuple('Open', BASIC_FIELDS + ['path', 'flags', 'handle_id'])):
 class Release(namedtuple('Release', BASIC_FIELDS + ['handle_id'])):
     __slots__ = ()
 
-    def perform(self, fds: Dict[int, int]) -> float:
+    def perform(self, fds: Dict[int, int]) -> int:
         fd = fds.pop(self.handle_id)
         s = time_ns()
         os.close(fd)
@@ -54,7 +54,7 @@ class Release(namedtuple('Release', BASIC_FIELDS + ['handle_id'])):
 class Fsync(namedtuple('Fsync', BASIC_FIELDS + ['handle_id', 'data_only'])):
     __slots__ = ()
 
-    def perform(self, fds: Dict[int, int]) -> float:
+    def perform(self, fds: Dict[int, int]) -> int:
         fd = fds[self.handle_id]
         sync = os.fdatasync if self.data_only else os.fsync
         s = time_ns()
@@ -66,7 +66,7 @@ class Create(namedtuple('Create', BASIC_FIELDS + ['path', 'flags', 'mode',
                                                   'handle_id'])):
     __slots__ = ()
 
-    def perform(self, fds: Dict[int, int]) -> float:
+    def perform(self, fds: Dict[int, int]) -> int:
         s = time_ns()
         fd = os.open(self.path, self.flags, self.mode)
         e = time_ns()
@@ -77,7 +77,7 @@ class Create(namedtuple('Create', BASIC_FIELDS + ['path', 'flags', 'mode',
 class MkDir(namedtuple('MkDir', BASIC_FIELDS + ['path', 'mode'])):
     __slots__ = ()
 
-    def perform(self, _: Dict[int, int]) -> float:
+    def perform(self, _: Dict[int, int]) -> int:
         s = time_ns()
         os.mkdir(self.path, self.mode)
         return time_ns() - s
@@ -86,7 +86,7 @@ class MkDir(namedtuple('MkDir', BASIC_FIELDS + ['path', 'mode'])):
 class MkNod(namedtuple('MkNod', BASIC_FIELDS + ['path', 'mode'])):
     __slots__ = ()
 
-    def perform(self, _: Dict[int, int]) -> float:
+    def perform(self, _: Dict[int, int]) -> int:
         s = time_ns()
         os.mknod(self.path, self.mode)
         return time_ns() - s
@@ -95,7 +95,7 @@ class MkNod(namedtuple('MkNod', BASIC_FIELDS + ['path', 'mode'])):
 class Unlink(namedtuple('Unlink', BASIC_FIELDS + ['path'])):
     __slots__ = ()
 
-    def perform(self, _: Dict[int, int]) -> float:
+    def perform(self, _: Dict[int, int]) -> int:
         s = time_ns()
         os.unlink(self.path)
         return time_ns() - s
@@ -104,7 +104,7 @@ class Unlink(namedtuple('Unlink', BASIC_FIELDS + ['path'])):
 class GetXAttr(namedtuple('GetXAttr', BASIC_FIELDS + ['path', 'attr'])):
     __slots__ = ()
 
-    def perform(self, _: Dict[int, int]) -> float:
+    def perform(self, _: Dict[int, int]) -> int:
         s = time_ns()
         os.getxattr(self.path, self.attr)
         return time_ns() - s
@@ -114,7 +114,7 @@ class SetXAttr(namedtuple('SetXAttr', BASIC_FIELDS + ['path', 'attr', 'val',
                                                       'flags'])):
     __slots__ = ()
 
-    def perform(self, _: Dict[int, int]) -> float:
+    def perform(self, _: Dict[int, int]) -> int:
         s = time_ns()
         os.setxattr(self.path, self.attr, self.val, self.flags)
         return time_ns() - s
@@ -123,7 +123,7 @@ class SetXAttr(namedtuple('SetXAttr', BASIC_FIELDS + ['path', 'attr', 'val',
 class RemoveXAttr(namedtuple('RemoveXAttr', BASIC_FIELDS + ['path', 'attr'])):
     __slots__ = ()
 
-    def perform(self, _: Dict[int, int]) -> float:
+    def perform(self, _: Dict[int, int]) -> int:
         s = time_ns()
         os.removexattr(self.path, self.attr)
         return time_ns() - s
@@ -132,7 +132,7 @@ class RemoveXAttr(namedtuple('RemoveXAttr', BASIC_FIELDS + ['path', 'attr'])):
 class ListXAttr(namedtuple('ListXAttr', BASIC_FIELDS + ['path'])):
     __slots__ = ()
 
-    def perform(self, _: Dict[int, int]) -> float:
+    def perform(self, _: Dict[int, int]) -> int:
         s = time_ns()
         os.listxattr(self.path)
         return time_ns() - s
@@ -141,7 +141,7 @@ class ListXAttr(namedtuple('ListXAttr', BASIC_FIELDS + ['path'])):
 class Read(namedtuple('Read', BASIC_FIELDS + ['handle_id', 'size', 'offset'])):
     __slots__ = ()
 
-    def perform(self, fds: Dict[int, int]) -> float:
+    def perform(self, fds: Dict[int, int]) -> int:
         fd = fds[self.handle_id]
         os.lseek(fd, self.offset, os.SEEK_SET)
         s = time_ns()
@@ -153,7 +153,7 @@ class Write(namedtuple('Write', BASIC_FIELDS + ['handle_id', 'size',
                                                 'offset'])):
     __slots__ = ()
 
-    def perform(self, fds: Dict[int, int]) -> float:
+    def perform(self, fds: Dict[int, int]) -> int:
         fd = fds[self.handle_id]
         random_junk = os.urandom(self.size)
         os.lseek(fd, self.offset, os.SEEK_SET)
@@ -165,7 +165,7 @@ class Write(namedtuple('Write', BASIC_FIELDS + ['handle_id', 'size',
 class Rename(namedtuple('Rename', BASIC_FIELDS + ['src_path', 'dst_path'])):
     __slots__ = ()
 
-    def perform(self, _: Dict[int, int]) -> float:
+    def perform(self, _: Dict[int, int]) -> int:
         s = time_ns()
         os.rename(self.src_path, self.dst_path)
         return time_ns() - s
@@ -175,10 +175,10 @@ class SetAttr(namedtuple('Rename', BASIC_FIELDS + ['path', 'mask', 'mode',
                                                    'size', 'atime', 'mtime'])):
     __slots__ = ()
 
-    def perform(self, _: Dict[int, int]) -> float:
+    def perform(self, _: Dict[int, int]) -> int:
         functions = []
         if self.mask & FUSE_SET_ATTR_MODE:
-            functions.append(lambda: os.truncate(self.path, self.mode))
+            functions.append(lambda: os.chmod(self.path, self.mode))
         if self.mask & FUSE_SET_ATTR_SIZE:
             functions.append(lambda: os.truncate(self.path, self.size))
         if self.mask & (FUSE_SET_ATTR_ATIME | FUSE_SET_ATTR_MTIME):

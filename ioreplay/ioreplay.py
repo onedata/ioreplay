@@ -10,18 +10,23 @@ import sys
 import argparse
 from time import sleep
 from pprint import pprint
-from itertools import tee, chain, zip_longest
+from itertools import tee, zip_longest
 
 from parser import IOTraceParser
 
 
 def pairwise(iterable):
     a, b = tee(iterable)
-    next(b, None)
+    next(b)
     return zip_longest(a, b)
 
 
-def replay(syscalls):
+def replay(mount_path: str, io_trace_path: str, create_env: bool):
+    parser = IOTraceParser(mount_path=mount_path, create_env=create_env)
+    syscalls, *times = parser.parse(io_trace_path)
+    pprint(syscalls)
+    pprint(times)
+
     io_duration = 0
     cpu_duration = 0
     fds = {}
@@ -42,22 +47,7 @@ def replay(syscalls):
             cpu_duration += delay * 1000  # timestamp and duration are in us
             sleep(delay/10**6)
 
-    print('Overhead: ', io_duration / (io_duration + cpu_duration))
-
-
-def heh(mount_path: str, io_trace_path: str, create_env: bool, sort_trace: bool):
-    if sort_trace:
-        with open(io_trace_path, 'r+') as f:
-            text = f.read().strip().split('\n')
-            header, *logs = text
-            logs.sort(key=lambda line: int(line.split(',', 1)[0]))
-            f.seek(0)
-            f.write('\n'.join(chain([header], logs)))
-
-    parser = IOTraceParser(mount_path=mount_path, create_env=create_env)
-    syscalls = parser.parse(io_trace_path)
-    pprint(syscalls)
-    # replay(syscalls)
+    print('Overhead:', io_duration / (io_duration + cpu_duration))
 
 
 def main():
@@ -74,15 +64,11 @@ def main():
                         action='store_true',
                         help='If specified missing files and directories '
                              'will be created before start of replay')
-    parser.add_argument('-s', '--sort_trace',
-                        action='store_true',
-                        help='If specified trace logs will be sorted by '
-                             'timestamp')
     args = parser.parse_args()
 
-    heh(args.mount_path, args.io_trace, args.create_env, args.sort_trace)
+    replay(args.mount_path, args.io_trace, args.create_env)
 
 
 if __name__ == '__main__':
-    heh('/home/cyfronet/Desktop/develop/test3', './qwe3.csv', True, False)
+    replay('/home/cyfronet/Desktop/develop/test4', './qwe4.csv', True)
     # main()
