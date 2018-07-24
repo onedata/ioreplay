@@ -23,12 +23,12 @@ def pairwise(iterable):
 
 def replay(mount_path: str, io_trace_path: str, create_env: bool):
     parser = IOTraceParser(mount_path=mount_path, create_env=create_env)
-    syscalls, *times = parser.parse(io_trace_path)
+    syscalls, *prev_times = parser.parse(io_trace_path)
     pprint(syscalls)
-    pprint(times)
 
     io_duration = 0
     cpu_duration = 0
+
     fds = {}
     for syscall, next_syscall in pairwise(syscalls):
         try:
@@ -47,7 +47,13 @@ def replay(mount_path: str, io_trace_path: str, create_env: bool):
             cpu_duration += delay * 1000  # timestamp and duration are in us
             sleep(delay/10**6)
 
-    print('Overhead:', io_duration / (io_duration + cpu_duration))
+    prog_duration = io_duration + cpu_duration
+    overhead = io_duration / prog_duration
+    prev_overhead = prev_times[0] / prev_times[1]
+    print('Statistics (original/replayed):',
+          f'\n\tIO duration [ns]:      {prev_times[0]*1000}/{io_duration}',
+          f'\n\tProgram duration [ns]: {prev_times[1]*1000}/{prog_duration}',
+          f'\n\tOverhead:              {prev_overhead:0.5f}/{overhead:0.5f}')
 
 
 def main():

@@ -155,7 +155,7 @@ class Write(namedtuple('Write', BASIC_FIELDS + ['handle_id', 'size',
 
     def perform(self, fds: Dict[int, int]) -> int:
         fd = fds[self.handle_id]
-        random_junk = os.urandom(self.size)
+        random_junk = os.read(os.open('/dev/zero', os.O_RDONLY), 1000000)
         os.lseek(fd, self.offset, os.SEEK_SET)
         s = time_ns()
         os.write(fd, random_junk)
