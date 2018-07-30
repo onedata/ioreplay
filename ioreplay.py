@@ -327,8 +327,6 @@ class IOTraceParser:
         path = self._join_path(parent_dir.path, entry.arg0)
 
         if uuid not in self._env:
-            parent_dir.size[0] += 1
-            parent_dir.size[1] -= 1
             if entry.uuid == self.mount_dir_uuid:
                 self.root_dir[uuid] = File(path, file_type, file_size)
             else:
@@ -597,9 +595,9 @@ def replay(parser: IOTraceParser, mount_path: str) -> None:
           f'\n\tOverhead:              {prev_overhead:0.5f}/{overhead:0.5f}')
 
 
-def create_env(parser: IOTraceParser, mount_path: str) -> None:
+def create_env(initial_files: Dict[str, File], mount_path: str) -> None:
     # first pass to create initial files and directories
-    for file in parser.initial_files.values():
+    for file in initial_files.values():
         path = os.path.join(mount_path, file.path)
         if not os.path.exists(path):
             try:
@@ -613,27 +611,27 @@ def create_env(parser: IOTraceParser, mount_path: str) -> None:
                 exit(1)
 
     # second pass to create dummy files in directories (for readdir)
-    for file in parser.initial_files.values():
+    for file in initial_files.values():
         if file.type == 'd':
-            path = os.path.join(mount_path, file.path)
+            dir_path = os.path.join(mount_path, file.path)
             try:
-                dir_content = os.listdir(path)
+                dir_content = os.listdir(dir_path)
                 files_to_create = max(0, file.size[1] - len(dir_content))
                 for _ in range(files_to_create):
                     file_name = str(uuid4())
                     while file_name in dir_content:
                         file_name = str(uuid4())
 
-                    file_path = os.path.join(path, file_name)
+                    file_path = os.path.join(dir_path, file_name)
                     os.close(os.open(file_path,
                                      os.O_WRONLY | os.O_CREAT | os.O_TRUNC))
             except Exception as ex:
                 print('Failed to create dummy file in {} due to '
-                      '{!r}'.format(path, ex), file=sys.stderr)
+                      '{!r}'.format(dir_path, ex), file=sys.stderr)
                 exit(1)
 
 
-def print_env_report(parser: IOTraceParser) -> None:
+def print_env_report(syscalls, initial_files: Dict[str, File]) -> None:
     width = 80
     table_line = '  ' + '-' * (width - 4)
     horizontal_line = '_' * width
@@ -647,7 +645,7 @@ def print_env_report(parser: IOTraceParser) -> None:
           '\n\n{title:^{width}}\n'.format(title='INITIAL FILES', width=width),
           '\n   File Type | File Size [B] | Path\n',
           table_line, sep='')
-    for file in parser.initial_files.values():
+    for file in initial_files.values():
         print(f'  {"dir" if file.type == "d" else "file":^11}| '
               f'{file.size if file.type == "f" else 0:13d} | '
               f'{file.path}')
@@ -656,7 +654,7 @@ def print_env_report(parser: IOTraceParser) -> None:
           '\n\n{title:^{width}}\n'.format(title='CREATED FILES', width=width),
           '\n   File Type | Path\n',
           table_line, sep='')
-    for sc in parser.syscalls:
+    for sc in syscalls:
         if sc[0] in ('mknod', 'create'):
             file_type = 'file'
         elif sc[0] == 'mkdir':
@@ -669,14 +667,14 @@ def print_env_report(parser: IOTraceParser) -> None:
     print('\n', horizontal_line,
           '\n\n{title:^{width}}\n'.format(title='REMOVED FILES', width=width),
           sep='')
-    for sc in parser.syscalls:
+    for sc in syscalls:
         if sc[0] in ('unlink', 'rmdir)'):
             print(f'  {sc[3]}')
 
     print('\n', horizontal_line,
           '\n\n{title:^{width}}\n'.format(title='RENAMED FILES', width=width),
           sep='')
-    for sc in parser.syscalls:
+    for sc in syscalls:
         if sc[0] == 'rename':
             print(f'  {sc[3]} -> {sc[4]}')
 
@@ -706,17 +704,25 @@ def main():
                         action='store_true',
                         help='If specified missing files and directories '
                              'will be created before start of replay')
+    parser.add_argument('-r', '--replace',
+                        action='append', default=[],
+                        help='Allows to mask files by specifying alternate path '
+                             'in form: <original_path>:<alternate_path> '
+                             '(e.q krk-c/one/data:krk-c/one/data2). Only last '
+                             'component of path should differ')
     args = parser.parse_args()
 
-    parser = IOTraceParser()
+    masked_files = dict(paths.split(':') for paths in args.replace)
+    parser = IOTraceParser(masked_files=masked_files)
     parser.parse(args.io_trace_path)
+
     if args.syscalls:
         pprint(parser.syscalls, width=100)
     if args.env_report:
-        print_env_report(parser)
+        print_env_report(parser.syscalls, parser.initial_files)
     if args.mount_path:
         if args.create_env:
-            create_env(parser, args.mount_path)
+            create_env(parser.initial_files, args.mount_path)
         replay(parser, args.mount_path)
 
 
