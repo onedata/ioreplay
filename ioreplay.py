@@ -8,14 +8,17 @@ __license__ = "This software is released under the Apache license cited in " \
 
 import os
 import sys
+import heapq
 import inspect
 import argparse
 import traceback
 from uuid import uuid4
 from pprint import pprint
 from functools import wraps
+from contextlib import suppress
 from time import sleep, time_ns
-from itertools import tee, zip_longest
+from tempfile import TemporaryDirectory
+from itertools import tee, zip_longest, islice
 from typing import Optional, Tuple, Dict, Callable
 from collections import namedtuple, deque, OrderedDict, ChainMap
 
@@ -25,6 +28,8 @@ from collections import namedtuple, deque, OrderedDict, ChainMap
 # between kernel and userland.
 CTX_SWITCH_DELAY = 250
 
+# Number of lines read at ones as a chunk in external sort
+DEFAULT_CHUNK_SIZE = 50_000
 
 FUSE_SET_ATTR_MODE = (1 << 0)
 FUSE_SET_ATTR_SIZE = (1 << 3)
@@ -275,13 +280,13 @@ class IOTraceParser:
         self.__init__(masked_files=self.masked_files)
 
     def parse(self, io_trace_path: str):
-        with open(io_trace_path) as f:
+        with open(io_trace_path) as trace_file:
             # ignore first line (headers)
-            f.readline()
+            trace_file.readline()
 
             # second should contain mount entry
             try:
-                mount_entry = IOEntry.from_str(f.readline())
+                mount_entry = IOEntry.from_str(trace_file.readline())
                 assert mount_entry.op == 'mount', mount_entry.op
             except AssertionError as ex:
                 print(f'Failed to parse trace file due to discovery of "{ex}" '
@@ -295,22 +300,18 @@ class IOTraceParser:
                 self.mount_dir_uuid = mount_entry.uuid
                 self.root_dir[mount_entry.uuid] = File('', 'd', [0, 0])
 
-            lines = f.readlines()
-
-        lines.sort(key=lambda x: int(x.split(',', maxsplit=1)[0]))
-
-        for i, line in enumerate(lines, start=3):
-            try:
-                entry = IOEntry.from_str(line)
-                operation = getattr(self, entry.op)
-                operation(entry)
-            except Exception:
-                print(f'Parsing of line {i} failed with:', file=sys.stderr)
-                traceback.print_exc(file=sys.stderr)
-            else:
-                self.io_duration += entry.duration
-                self.end_timestamp = max(self.end_timestamp,
-                                         entry.timestamp + entry.duration)
+            for i, line in enumerate(trace_file, start=3):
+                try:
+                    entry = IOEntry.from_str(line)
+                    operation = getattr(self, entry.op)
+                    operation(entry)
+                except Exception:
+                    print(f'Parsing of line {i} failed with:', file=sys.stderr)
+                    traceback.print_exc(file=sys.stderr)
+                else:
+                    self.io_duration += entry.duration
+                    self.end_timestamp = max(self.end_timestamp,
+                                             entry.timestamp + entry.duration)
 
         self.syscalls.sort(key=lambda x: x[1])
         self.start_timestamp = self.syscalls[0][1]
@@ -681,17 +682,62 @@ def print_env_report(syscalls, initial_files: Dict[str, File]) -> None:
     print('\n\n', horizontal_bold_line, sep='')
 
 
+def sort_trace_file(path: str, chunk_size: int = DEFAULT_CHUNK_SIZE) -> None:
+    key_fun = lambda line: int(line.split(',', maxsplit=1)[0])
+
+    with TemporaryDirectory() as tmpdir, open(path, 'r+') as trace_file:
+        chunks = []
+
+        headers = trace_file.readline()
+        mount_entry = trace_file.readline()
+        input_iterator = iter(trace_file)
+
+        while True:
+            current_chunk = list(islice(input_iterator, chunk_size))
+            if not current_chunk:
+                break
+
+            current_chunk.sort(key=key_fun)
+
+            output_chunk_path = os.path.join(tmpdir, f'chunk{len(chunks)}')
+            output_chunk = open(output_chunk_path, 'w+')
+            output_chunk.writelines(current_chunk)
+            output_chunk.flush()
+            output_chunk.seek(0)
+            chunks.append(output_chunk)
+
+        trace_file.seek(0)
+        trace_file.write(headers)
+        trace_file.write(mount_entry)
+        trace_file.writelines(heapq.merge(*chunks, key=key_fun))
+
+        for output_chunk in chunks:
+            with suppress(Exception):
+                output_chunk.close()
+
+
 def main():
     parser = argparse.ArgumentParser(prog='ioreplay',
                                      description='Replay recorded activities '
                                                  'performed using Oneclient')
     parser.add_argument('io_trace_path',
                         help='Path to trace file containing recorder io')
+    parser.add_argument('-s', '--sort-trace',
+                        action='store_true',
+                        help='If specified trace file will be sorted. '
+                             'Otherwise it is assumed that trace file is '
+                             'already sorted')
+    parser.add_argument('--chunk-size',
+                        type=int,
+                        metavar='SIZE',
+                        default=DEFAULT_CHUNK_SIZE,
+                        help='Number of lines read at ones and sorted during '
+                             'external sort of trace file')
     parser.add_argument('-m', '--mount-path',
                         help='Path to mounted Onelcient. If not specified '
                              'program will perform dry run meaning it will '
                              'parse trace file but not call any system calls')
-    parser.add_argument('-s', '--syscalls',
+    parser.add_argument('-g', '--syscalls',
                         action='store_true',
                         help='When specified detailed information about system '
                              'calls retrieved when parsing trace file will be '
@@ -711,6 +757,9 @@ def main():
                              '(e.q krk-c/one/data:krk-c/one/data2). Only last '
                              'component of path should differ')
     args = parser.parse_args()
+
+    if args.sort_trace:
+        sort_trace_file(args.io_trace_path, args.chunk_size)
 
     masked_files = dict(paths.split(':') for paths in args.replace)
     parser = IOTraceParser(masked_files=masked_files)
