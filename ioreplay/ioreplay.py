@@ -1,4 +1,4 @@
-#! /usr/bin/env python3.7
+#! /usr/bin/env python3
 """This module contains syscalls replayer and its command line interface"""
 
 __author__ = "Bartosz Walkowicz"
@@ -12,15 +12,23 @@ import heapq
 import inspect
 import argparse
 import traceback
+from time import sleep
 from uuid import uuid4
 from pprint import pprint
 from functools import wraps
 from contextlib import suppress
-from time import sleep, time_ns
 from tempfile import TemporaryDirectory
 from itertools import tee, zip_longest, islice
 from typing import Optional, Tuple, Dict, Callable
 from collections import namedtuple, deque, OrderedDict, ChainMap
+
+try:
+    from time import time_ns
+except ImportError:
+    from time import time as _time
+
+    def time_ns():
+        return int(_time() * 10**9)
 
 
 # Max delay, in us, between subsequent fuse calls of the same system call
@@ -29,7 +37,7 @@ from collections import namedtuple, deque, OrderedDict, ChainMap
 CTX_SWITCH_DELAY = 250
 
 # Number of lines read at ones as a chunk in external sort
-DEFAULT_CHUNK_SIZE = 50_000
+DEFAULT_CHUNK_SIZE = 50000
 
 FUSE_SET_ATTR_MODE = (1 << 0)
 FUSE_SET_ATTR_SIZE = (1 << 3)
@@ -248,9 +256,9 @@ class IOEntry(namedtuple('IOEntry', IO_ENTRY_FIELDS)):
         elif fields_num == IO_ENTRY_FIELDS_NUM:
             pass
         else:
-            raise ValueError(f'Expected {IO_ENTRY_FIELDS_NUM} number of '
-                             f'arguments in entry instead of '
-                             f'specified {fields_num}')
+            raise ValueError('Expected {} number of arguments in entry instead '
+                             'of specified {}'.format(IO_ENTRY_FIELDS_NUM,
+                                                      fields_num))
 
         timestamp, op, duration, uuid, handle_id, *args = fields
 
@@ -289,8 +297,8 @@ class IOTraceParser:
                 mount_entry = IOEntry.from_str(trace_file.readline())
                 assert mount_entry.op == 'mount', mount_entry.op
             except AssertionError as ex:
-                print(f'Failed to parse trace file due to discovery of "{ex}" '
-                      f'as second entry instead of expected "mount" one')
+                print('Failed to parse trace file due to discovery of "{}" as '
+                      'second entry instead of expected "mount" one'.format(ex))
                 exit(1)
             except Exception as ex:
                 print('Failed to read "mount" entry at line 2, and as such '
@@ -306,7 +314,8 @@ class IOTraceParser:
                     operation = getattr(self, entry.op)
                     operation(entry)
                 except Exception:
-                    print(f'Parsing of line {i} failed with:', file=sys.stderr)
+                    print('Parsing of line {} failed with:'.format(i),
+                          file=sys.stderr)
                     traceback.print_exc(file=sys.stderr)
                 else:
                     self.io_duration += entry.duration
@@ -459,7 +468,8 @@ class IOTraceParser:
         timestamp, duration = self._take_pending_lookup(src_path,
                                                         entry.timestamp,
                                                         entry.duration)
-        self.syscalls.append((entry.op, timestamp, duration, src_path, dst_path))
+        self.syscalls.append((entry.op, timestamp, duration,
+                              src_path, dst_path))
 
     def getxattr(self, entry: IOEntry):
         """[getxattr] arg-0: name"""
@@ -550,7 +560,7 @@ class IOTraceParser:
         if file:
             return file
         else:
-            raise ValueError(f'unknown file with uuid {uuid}')
+            raise ValueError('unknown file with uuid {}'.format(uuid))
 
     def _join_path(self, parent_path: str, name: str) -> str:
         path = os.path.join(parent_path, name)
@@ -570,7 +580,7 @@ def replay(parser: IOTraceParser, mount_path: str) -> None:
     ctx = Context(mount_path, {}, {})
     for sc, next_sc in pairwise(parser.syscalls):
         try:
-           io_duration += SYSCALLS[f'posix_{sc[0]}'](ctx, *sc[3:])
+            io_duration += SYSCALLS['posix_{}'.format(sc[0])](ctx, *sc[3:])
         except Exception as ex:
             print('Failed to execute {} due to {!r}'.format(sc[0], ex),
                   file=sys.stderr)
@@ -591,9 +601,12 @@ def replay(parser: IOTraceParser, mount_path: str) -> None:
     prev_overhead = parser.io_duration / prev_prog_duration
 
     print('Statistics (original/replayed):',
-          f'\n\tIO duration [ns]:      {parser.io_duration}/{io_duration}',
-          f'\n\tProgram duration [ns]: {prev_prog_duration}/{prog_duration}',
-          f'\n\tOverhead:              {prev_overhead:0.5f}/{overhead:0.5f}')
+          '\n\tIO duration [ns]:      {}/{}'.format(parser.io_duration,
+                                                    io_duration),
+          '\n\tProgram duration [ns]: {}/{}'.format(prev_prog_duration,
+                                                    prog_duration),
+          '\n\tOverhead:              {:0.5f}/{:0.5f}'.format(prev_overhead,
+                                                              overhead))
 
 
 def create_env(initial_files: Dict[str, File], mount_path: str) -> None:
@@ -639,7 +652,8 @@ def print_env_report(syscalls, initial_files: Dict[str, File]) -> None:
     horizontal_bold_line = '=' * width
 
     print('\n\n', horizontal_bold_line,
-          '\n{title:^{width}}\n'.format(title="ENVIRONMENT REPORT", width=width),
+          '\n{title:^{width}}\n'.format(title="ENVIRONMENT REPORT",
+                                        width=width),
           horizontal_bold_line, sep='')
 
     print('\n', horizontal_line,
@@ -647,9 +661,10 @@ def print_env_report(syscalls, initial_files: Dict[str, File]) -> None:
           '\n   File Type | File Size [B] | Path\n',
           table_line, sep='')
     for file in initial_files.values():
-        print(f'  {"dir" if file.type == "d" else "file":^11}| '
-              f'{file.size if file.type == "f" else 0:13d} | '
-              f'{file.path}')
+        print('  {type:^11}| {size:13d} | {path}'
+              ''.format(type='dir' if file.type == 'd' else 'file',
+                        size=file.size if file.type == 'f' else 0,
+                        path=file.path))
 
     print('\n', horizontal_line,
           '\n\n{title:^{width}}\n'.format(title='CREATED FILES', width=width),
@@ -663,21 +678,21 @@ def print_env_report(syscalls, initial_files: Dict[str, File]) -> None:
         else:
             continue
 
-        print(f'  {file_type:^11}| {sc[3]}')
+        print('  {:^11}| {}'.format(file_type, sc[3]))
 
     print('\n', horizontal_line,
           '\n\n{title:^{width}}\n'.format(title='REMOVED FILES', width=width),
           sep='')
     for sc in syscalls:
         if sc[0] in ('unlink', 'rmdir)'):
-            print(f'  {sc[3]}')
+            print('  {}'.format(sc[3]))
 
     print('\n', horizontal_line,
           '\n\n{title:^{width}}\n'.format(title='RENAMED FILES', width=width),
           sep='')
     for sc in syscalls:
         if sc[0] == 'rename':
-            print(f'  {sc[3]} -> {sc[4]}')
+            print('  {} -> {}'.format(sc[3], sc[4]))
 
     print('\n\n', horizontal_bold_line, sep='')
 
@@ -699,7 +714,8 @@ def sort_trace_file(path: str, chunk_size: int = DEFAULT_CHUNK_SIZE) -> None:
 
             current_chunk.sort(key=key_fun)
 
-            output_chunk_path = os.path.join(tmpdir, f'chunk{len(chunks)}')
+            output_chunk_path = os.path.join(tmpdir,
+                                             'chunk{}'.format(len(chunks)))
             output_chunk = open(output_chunk_path, 'w+')
             output_chunk.writelines(current_chunk)
             output_chunk.flush()
@@ -752,8 +768,8 @@ def main():
                              'will be created before start of replay')
     parser.add_argument('-r', '--replace',
                         action='append', default=[],
-                        help='Allows to mask files by specifying alternate path '
-                             'in form: <original_path>:<alternate_path> '
+                        help='Allows to mask files by specifying alternate '
+                             'path in form: <original_path>:<alternate_path> '
                              '(e.q krk-c/one/data:krk-c/one/data2). Only last '
                              'component of path should differ')
     args = parser.parse_args()
