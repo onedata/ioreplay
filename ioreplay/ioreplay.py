@@ -1,4 +1,3 @@
-#! /usr/bin/env python3
 """This module contains syscalls replayer and its command line interface"""
 
 __author__ = "Bartosz Walkowicz"
@@ -546,7 +545,7 @@ class IOTraceParser:
         pending_lookups_for_path = self._pending_lookups.get(path, [])
         for pl in pending_lookups_for_path:
             pl_timestamp, pl_duration = pl
-            if 0 <= timestamp - (pl_timestamp + pl_duration) <= CTX_SWITCH_DELAY:
+            if 0 <= timestamp - pl_timestamp - pl_duration <= CTX_SWITCH_DELAY:
                 pending_lookups_for_path.remove(pl)
                 new_lookup = (pl_timestamp, timestamp + duration - pl_timestamp)
                 break
