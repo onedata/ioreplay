@@ -746,10 +746,10 @@ def main():
                         type=int,
                         metavar='SIZE',
                         default=DEFAULT_CHUNK_SIZE,
-                        help='Number of lines read at ones and sorted during '
+                        help='Number of lines read at once and sorted during '
                              'external sort of trace file')
     parser.add_argument('-m', '--mount-path',
-                        help='Path to mounted Onelcient. If not specified '
+                        help='Path to mounted Oneclient. If not specified '
                              'program will perform dry run meaning it will '
                              'parse trace file but not call any system calls')
     parser.add_argument('-g', '--syscalls',
