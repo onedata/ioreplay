@@ -3,7 +3,7 @@ DISTRIBUTION        	?= centos-7-x86_64
 FPM_DOCKER_IMAGE        ?= docker.onedata.org/fpm:1.9.3
 PKG_BUILD       	?= 1
 
-IOREPLAY_VERSION = 0.1
+IOREPLAY_VERSION = 0.2
 
 
 .PHONY: all

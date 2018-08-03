@@ -765,12 +765,16 @@ def main():
                         action='store_true',
                         help='If specified missing files and directories '
                              'will be created before start of replay')
-    parser.add_argument('-r', '--replace',
+    parser.add_argument('-l', '--replace',
                         action='append', default=[],
                         help='Allows to mask files by specifying alternate '
                              'path in form: <original_path>:<alternate_path> '
                              '(e.q krk-c/one/data:krk-c/one/data2). Only last '
                              'component of path should differ')
+    parser.add_argument('-r', '--run',
+                        action='store_true',
+                        help='If specified, alongside `-m`, recorded system '
+                             'calls will be replayed')
     args = parser.parse_args()
 
     if args.sort_trace:
@@ -787,7 +791,8 @@ def main():
     if args.mount_path:
         if args.create_env:
             create_env(parser.initial_files, args.mount_path)
-        replay(parser, args.mount_path)
+        if args.run:
+            replay(parser, args.mount_path)
 
 
 if __name__ == '__main__':
