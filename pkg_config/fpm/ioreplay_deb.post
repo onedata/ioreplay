@@ -1,0 +1,2 @@
+rm -f /usr/bin/ioreplay
+rm -rf /opt/ioreplay
