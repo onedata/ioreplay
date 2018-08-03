@@ -298,11 +298,11 @@ class IOTraceParser:
             except AssertionError as ex:
                 print('Failed to parse trace file due to discovery of "{}" as '
                       'second entry instead of expected "mount" one'.format(ex))
-                exit(1)
+                sys.exit(1)
             except Exception as ex:
                 print('Failed to read "mount" entry at line 2, and as such '
                       'parse trace file, due to: {ex}'.format(ex=ex))
-                exit(1)
+                sys.exit(1)
             else:
                 self.mount_dir_uuid = mount_entry.uuid
                 self.root_dir[mount_entry.uuid] = File('', 'd', [0, 0])
@@ -621,7 +621,7 @@ def create_env(initial_files: Dict[str, File], mount_path: str) -> None:
                     os.mkdir(path)
             except Exception as ex:
                 print('Failed to create {} due to {!r}'.format(path, ex))
-                exit(1)
+                sys.exit(1)
 
     # second pass to create dummy files in directories (for readdir)
     for file in initial_files.values():
@@ -641,7 +641,7 @@ def create_env(initial_files: Dict[str, File], mount_path: str) -> None:
             except Exception as ex:
                 print('Failed to create dummy file in {} due to '
                       '{!r}'.format(dir_path, ex), file=sys.stderr)
-                exit(1)
+                sys.exit(1)
 
 
 def print_env_report(syscalls, initial_files: Dict[str, File]) -> None:
