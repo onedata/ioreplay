@@ -1,5 +1,8 @@
+.directory
 .idea
 
 *.iml
 *.sublime*
 *.pyc
+*.csv
+*.tar.gz

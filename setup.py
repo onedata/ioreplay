@@ -2,7 +2,7 @@ from setuptools import setup
 
 
 setup(name='ioreplay',
-      version='0.1',
+      version='0.2',
       author='Onedata Package Maintainer',
       author_email='info@onedata.org',
       description='application used to replay recorder Oneclient io activity',
