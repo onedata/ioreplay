@@ -2,6 +2,15 @@
 
 *ioreplay* is an application used to replay recorded activities performed using [Oneclient](https://github.com/onedata/oneclient)
 
+## Installation
+
+### Linux
+*ioreplay* is supported on several major Linux platforms including Ubuntu and CentoOS. To install *ioreplay* using packages simply use the following command:
+
+```bash
+curl -sS  http://get.onedata.org/ioreplay.sh | bash
+```
+
 # Example Usage:
 
 ## Disclaimer
